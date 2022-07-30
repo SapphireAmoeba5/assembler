@@ -44,17 +44,27 @@ impl SymbolTable {
         }
     }
 
-    pub fn add_label(&mut self, label: Label) {
+    pub fn add_label(&mut self, label: Label) -> bool {
+        if self.table.contains_key(&label.name) {
+            return false;
+        }
+
         self.table
             .insert(label.name.clone(), Symbol::SymbolLabel(label));
+        true
     }
 
-    pub fn add_constant(&mut self, constant: Constant) {
+    pub fn add_constant(&mut self, constant: Constant) -> bool {
+        if self.table.contains_key(&constant.name) {
+            return false;
+        }
+
         self.table
             .insert(constant.name.clone(), Symbol::SymbolConstant(constant));
+        true
     }
 
-    pub fn insert(&mut self, symbol: Symbol) {
+    pub fn insert(&mut self, symbol: Symbol) -> bool {
         match symbol {
             Symbol::SymbolLabel(label) => self.add_label(label),
             Symbol::SymbolConstant(constant) => self.add_constant(constant),

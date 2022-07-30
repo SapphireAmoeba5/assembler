@@ -1,6 +1,7 @@
-use clap::Parser;
-
 mod assembler;
+mod logger;
+
+use clap::Parser;
 
 use assembler::Assembler;
 
