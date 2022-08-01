@@ -19,7 +19,13 @@ fn main() {
 
     let errors = Assembler::assemble(args.input, args.output);
 
-    for (error, file, line) in errors.iter() {
-        println!("[Error] {} {}:{}", error, file, line);
+    for (error, location) in errors.iter() {
+        print!("[Error] {}", error);
+
+        if let Some((file, line_number)) = location {
+            println!(" {}:{}", file, line_number);
+        } else {
+            println!();
+        }
     }
 }

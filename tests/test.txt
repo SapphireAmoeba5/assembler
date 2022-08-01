@@ -1,1 +1,3 @@
 0x3effu8
+label1: 10
+mov x0, [x0 + 4]

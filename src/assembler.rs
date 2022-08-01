@@ -23,14 +23,15 @@ pub struct Assembler {
 }
 
 type AssemblerResult<T> = Result<T, Cow<'static, str>>;
+type AssemblerReturn = Vec<(Cow<'static, str>, Option<(String, usize)>)>;
 
 impl Assembler {
     /// Returns a vector containing each error produced. Returns 0 length vector on successful compilation
     pub fn assemble(
         input_file: String,
         output_file: String,
-    ) -> Vec<(Cow<'static, str>, String, usize)> {
-        let mut errors: Vec<(Cow<'static, str>, String, usize)> = Vec::new();
+    ) -> AssemblerReturn {
+        let mut errors: AssemblerReturn = Vec::new();
 
         let mut this = Self {
             input_file: input_file,

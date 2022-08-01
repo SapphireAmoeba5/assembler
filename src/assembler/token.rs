@@ -10,6 +10,14 @@ pub enum Token {
         line_number: usize,
     },
 
+    Index {
+        base: Option<Register>,
+        index: Option<Register>,
+        offset: usize,
+        scalar: Size, /* The scalar can only be 1, 2, 4 or 8 */
+        size: Size,
+    },
+
     // Constant integer, and strings are usually encoded directly into the executable. This behaviour may change depending on where they are used.
     // Character constants are converted into 1 byte integers
     ConstantInteger {
@@ -17,6 +25,7 @@ pub enum Token {
         size: Size,
         line_number: usize,
     },
+
     ConstantString {
         value: String,
         line_number: usize,
