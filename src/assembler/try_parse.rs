@@ -65,7 +65,7 @@ pub fn try_parse_number(number: &str) -> AssemblerResult<Option<(u64, Size)>> {
     match try_parse_hex(number) {
         Ok(Some(val)) => {
             return Ok(Some((
-                if sign == 1 { val } else { val.wrapping_neg() },
+                trunucate_to_size(if sign == 1 { val } else { val.wrapping_neg() }, size),
                 size,
             )))
         }
@@ -76,7 +76,7 @@ pub fn try_parse_number(number: &str) -> AssemblerResult<Option<(u64, Size)>> {
     match try_parse_binary(number) {
         Ok(Some(val)) => {
             return Ok(Some((
-                if sign == 1 { val } else { val.wrapping_neg() },
+                trunucate_to_size(if sign == 1 { val } else { val.wrapping_neg() }, size),
                 size,
             )))
         }
@@ -86,11 +86,17 @@ pub fn try_parse_number(number: &str) -> AssemblerResult<Option<(u64, Size)>> {
 
     match try_parse_decimal(number) {
         Ok(val) => Ok(Some((
-            if sign == 1 { val } else { val.wrapping_neg() },
+            trunucate_to_size(if sign == 1 { val } else { val.wrapping_neg() }, size),
             size,
         ))),
         Err(e) => Err(e),
     }
+}
+
+pub fn trunucate_to_size(value: u64, size: Size) -> u64 {
+    let size = size as usize;
+
+    u64::from_le_bytes(value.to_le_bytes()[0..size].try_into().unwrap())
 }
 
 fn try_parse_hex(hex: &str) -> AssemblerResult<Option<u64>> {

@@ -1,3 +1,4 @@
+use super::size::Size;
 use std::collections::HashMap;
 
 pub struct Label {
@@ -20,11 +21,17 @@ pub struct Constant {
     pub name: String,
     pub value: usize,
     pub line: usize,
+    pub size: Size,
 }
 
 impl Constant {
-    pub fn new(name: String, value: usize, line: usize) -> Self {
-        Self { name, value, line }
+    pub fn new(name: String, value: usize, line: usize, size: Size) -> Self {
+        Self {
+            name,
+            value,
+            line,
+            size,
+        }
     }
 }
 

@@ -6,8 +6,7 @@ use super::Size;
 pub enum Token {
     Instruction {
         instruction: Instruction,
-        arguments: Vec<Token>,
-        line_number: usize,
+        operands: Vec<Token>,
     },
 
     Index {
@@ -23,33 +22,28 @@ pub enum Token {
     ConstantInteger {
         value: u64,
         size: Size,
-        line_number: usize,
     },
 
     ConstantString {
         value: String,
-        line_number: usize,
     },
 
     Identifier {
         identifier: String,
-        line_number: usize,
     },
 
     MemoryReserve {
         value: Box<Token>,
         size: Box<Token>, /* Size is a token to allow you to use identifiers instead of just integers */
-        line_number: usize,
-    }, // Memory reserving allows you to insert data directly into the executable
+    },
 
     Directive {
         directive: String,
         arguments: Vec<String>,
-        line_number: usize,
     },
 
+    // Register is only a valid token if used as a operand inside of an instruction
     Register {
         register: Register,
-        line_number: usize,
     },
 }
