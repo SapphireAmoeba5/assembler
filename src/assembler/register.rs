@@ -1,7 +1,7 @@
 use super::Size;
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Register {
     // Each register enum contains a single usize which contains the size of the register. that usize should always be either 1, 2, 4, or 8
     X0(Size),
@@ -9,8 +9,34 @@ pub enum Register {
     X2(Size),
     X3(Size),
     X4(Size),
-    IP(Size),
     SP(Size),
+    IP(Size),
+}
+
+impl Register {
+    pub fn get_size(&self) -> Size {
+        match self {
+            Self::X0(size) => *size,
+            Self::X1(size) => *size,
+            Self::X2(size) => *size,
+            Self::X3(size) => *size,
+            Self::X4(size) => *size,
+            Self::IP(size) => *size,
+            Self::SP(size) => *size,
+        }
+    }
+
+    pub fn get_register_id(&self) -> u8 {
+        match self {
+            Self::X0(_) => 1,
+            Self::X1(_) => 2,
+            Self::X2(_) => 3,
+            Self::X3(_) => 4,
+            Self::X4(_) => 5,
+            Self::SP(_) => 6,
+            Self::IP(_) => 7,
+        }
+    }
 }
 
 impl FromStr for Register {

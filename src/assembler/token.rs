@@ -12,7 +12,7 @@ pub enum Token {
     Index {
         base: Option<Register>,
         index: Option<Register>,
-        offset: usize,
+        offset: u64,
         scalar: Size, /* The scalar can only be 1, 2, 4 or 8 */
         size: Size,
     },
@@ -25,7 +25,7 @@ pub enum Token {
     },
 
     ConstantString {
-        value: String,
+        value: Vec<u8>,
     },
 
     Identifier {

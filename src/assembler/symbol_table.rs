@@ -3,12 +3,12 @@ use std::collections::HashMap;
 
 pub struct Label {
     pub name: String,
-    pub address: usize,
+    pub address: u64,
     pub line: usize,
 }
 
 impl Label {
-    pub fn new(name: String, address: usize, line: usize) -> Self {
+    pub fn new(name: String, address: u64, line: usize) -> Self {
         Self {
             name,
             address,
@@ -19,13 +19,13 @@ impl Label {
 
 pub struct Constant {
     pub name: String,
-    pub value: usize,
+    pub value: u64,
     pub line: usize,
     pub size: Size,
 }
 
 impl Constant {
-    pub fn new(name: String, value: usize, line: usize, size: Size) -> Self {
+    pub fn new(name: String, value: u64, line: usize, size: Size) -> Self {
         Self {
             name,
             value,
@@ -38,6 +38,15 @@ impl Constant {
 pub enum Symbol {
     SymbolLabel(Label),
     SymbolConstant(Constant),
+}
+
+impl Symbol {
+    pub fn get_line(&self) -> usize {
+        match self {
+            Symbol::SymbolConstant(constant) => constant.line,
+            Symbol::SymbolLabel(label) => label.line,
+        }
+    }
 }
 
 pub struct SymbolTable {
