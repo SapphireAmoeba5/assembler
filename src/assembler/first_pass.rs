@@ -63,6 +63,8 @@ impl FirstPass {
 
 impl FirstPass {
     fn first_pass(&mut self, source: &str) -> AssemblerReturn {
+        debug_println!("Parsing:\n{}", source);
+
         let mut errors: AssemblerReturn = Vec::with_capacity(10);
 
         for (line_index, line) in source.lines().enumerate() {
@@ -210,15 +212,24 @@ impl FirstPass {
             }
 
             /* Instructions that are garunteed to be encoded in 2 bytes */
-            Instruction::Not | Instruction::Neg | Instruction::Push | Instruction::Pop => Ok(2), /* These instructions are always encoded in 2 bytes */
+            Instruction::Not
+            | Instruction::Neg
+            | Instruction::Push
+            | Instruction::Pop
+            | Instruction::Int => Ok(2), /* These instructions are always encoded in 2 bytes */
 
             /* Instructions that are garunteed to be encoded in 1 byte */
-            Instruction::Hlt | Instruction::Nop => Ok(1), /* Garunteed to be encoded in 1 byte */
+            Instruction::Hlt
+            | Instruction::Nop
+            | Instruction::Ret
+            | Instruction::Pushf
+            | Instruction::Popf
+            | Instruction::Reti => Ok(1), /* Garunteed to be encoded in 1 byte */
 
             /* Instructions that are garunteed to be encoded in 11 bytes */
             Instruction::Str | Instruction::Ldr | Instruction::Lea => Ok(11),
 
-            /* Instructoins that are garunteed to be encoded in 10 bytes */
+            /* Instructions that are garunteed to be encoded in 10 bytes */
             Instruction::Jmp
             | Instruction::Jz
             | Instruction::Jnz
@@ -233,7 +244,9 @@ impl FirstPass {
             | Instruction::Jl
             | Instruction::Jge
             | Instruction::Jle
-            | Instruction::Jg => Ok(10),
+            | Instruction::Jg
+            | Instruction::Call
+            | Instruction::Lidt => Ok(10),
         }
     }
 }
@@ -250,6 +263,8 @@ impl FirstPass {
             || ch == ')'
             || ch == '+'
             || ch == '*'
+            || ch == '-'
+            || ch == '/'
             || ch == '='
     }
 
@@ -258,6 +273,7 @@ impl FirstPass {
 
         let mut in_string = false;
         let mut escaped = false;
+        let mut has_comment = false;
 
         let mut start = 0;
         for (i, ch) in line.char_indices() {
@@ -275,14 +291,21 @@ impl FirstPass {
 
                     result.push(slice);
                     start = i + 1;
-                }
-                if Self::is_token_seperator(ch) {
+                } else if Self::is_token_seperator(ch) {
                     let slice = &line[start..i];
                     if !slice.trim().is_empty() {
                         result.push(slice);
                     }
                     result.push(&line[i..i + 1]);
                     start = i + 1;
+                } else if ch == ';' {
+                    let slice = &line[start..i];
+                    if !slice.trim().is_empty() {
+                        result.push(slice);
+                    }
+
+                    has_comment = true;
+                    break;
                 }
             } else if ch == '\\' {
                 if !escaped {
@@ -293,7 +316,7 @@ impl FirstPass {
             }
         }
         let slice = &line[start..];
-        if !slice.is_empty() {
+        if !has_comment && !slice.is_empty() {
             result.push(&line[start..]);
         }
 

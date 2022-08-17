@@ -102,7 +102,10 @@ impl Assembler {
             Token::ConstantInteger { value, size } => self.assemble_constant_integer(*value, *size),
             Token::ConstantString { value } => self.assemble_constant_string(value),
             Token::MemoryReserve { value, size } => self.assemble_memory_reserve(value, size),
-            Token::Directive{directive, arguments} => self.parse_directive(directive, arguments)?,
+            Token::Directive {
+                directive,
+                arguments,
+            } => self.parse_directive(directive, arguments)?,
             Token::Instruction {
                 instruction,
                 operands,
@@ -194,9 +197,12 @@ impl Assembler {
             }
 
             // Zero operand instructions
-            Instruction::Hlt | Instruction::Nop => {
-                self.assembled_data.borrow_mut().push(instruction as u8)
-            }
+            Instruction::Hlt
+            | Instruction::Nop
+            | Instruction::Ret
+            | Instruction::Pushf
+            | Instruction::Popf
+            | Instruction::Reti => self.assembled_data.borrow_mut().push(instruction as u8),
 
             Instruction::Str | Instruction::Ldr | Instruction::Lea => self
                 .assemble_memory_instruction(
@@ -222,12 +228,16 @@ impl Assembler {
             | Instruction::Jl
             | Instruction::Jge
             | Instruction::Jle
-            | Instruction::Jg => self.assemble_branch_instruction(
+            | Instruction::Jg
+            | Instruction::Call
+            | Instruction::Lidt => self.assemble_branch_instruction(
                 instruction,
                 operands,
                 instruction_offset,
                 instruction_width,
             )?,
+
+            Instruction::Int => self.assemble_interrupt_instruction(instruction, operands)?,
         }
 
         Ok(())
@@ -247,7 +257,7 @@ impl Assembler {
         }
 
         let mut assembled_data = self.assembled_data.borrow_mut();
-assembled_data.push(instruction as u8);
+        assembled_data.push(instruction as u8);
 
         let left_operand = &operands[0];
         let right_operand = &operands[1];
@@ -487,6 +497,51 @@ assembled_data.push(instruction as u8);
         Ok(())
     }
 
+    fn assemble_interrupt_instruction(
+        &self,
+        instruction: Instruction,
+        operands: &[Token],
+    ) -> AssemblerResult<()> {
+        if operands.len() != 1 {
+            return Err(Cow::from(format!(
+                "Instruction expects 1 operand but found {}",
+                operands.len()
+            )));
+        }
+
+        self.assembled_data.borrow_mut().push(instruction as u8);
+
+        let constant = match &operands[0] {
+            Token::ConstantInteger { value, .. } => *value as u8,
+            Token::Identifier { identifier } => {
+                match self.first_pass.symbol_table.get(identifier) {
+                    Some(Symbol::SymbolConstant(constant)) => constant.value as u8,
+                    Some(Symbol::SymbolLabel(_)) => {
+                        return Err(Cow::from(format!(
+                            "Identifier \"{}\" is a label. Cannot use labels in this position",
+                            identifier
+                        )))
+                    }
+                    None => {
+                        return Err(Cow::from(format!(
+                            "Identifier \"{}\" does not exists",
+                            identifier
+                        )))
+                    }
+                }
+            }
+            _ => {
+                return Err(Cow::from(
+                    "Expected an integer literal, or constant variable",
+                ))
+            }
+        };
+
+        self.assembled_data.borrow_mut().push(constant);
+
+        Ok(())
+    }
+
     fn assemble_index(
         &self,
         base: Option<Register>,
@@ -517,13 +572,19 @@ impl Assembler {
     fn parse_directive(&self, directive: &str, arguments: &[String]) -> AssemblerResult<()> {
         match directive {
             "entry" => self.parse_entry_directive(arguments),
-            _ => Err(Cow::from(format!("\"{}\" is an unknown directive", directive))),
+            _ => Err(Cow::from(format!(
+                "\"{}\" is an unknown directive",
+                directive
+            ))),
         }
     }
 
     fn parse_entry_directive(&self, arguments: &[String]) -> AssemblerResult<()> {
         if arguments.len() != 1 {
-            return Err(Cow::from(format!("Directive expects only one argument but found {}", arguments.len())));
+            return Err(Cow::from(format!(
+                "Directive expects only one argument but found {}",
+                arguments.len()
+            )));
         }
 
         match self.first_pass.symbol_table.get(&arguments[0]) {
@@ -535,9 +596,14 @@ impl Assembler {
                 let _ = self.entry_point.borrow_mut().insert(label.name.clone());
                 Ok(())
             }
-            Some(Symbol::SymbolConstant(constant)) => Err(Cow::from(format!("Identifier \"{}\" is a constant. Only labels can be defined as entry points", arguments[0]))),
-            None => Err(Cow::from(format!("No label with the name \"{}\" exists", arguments[0])))
-
+            Some(Symbol::SymbolConstant(constant)) => Err(Cow::from(format!(
+                "Identifier \"{}\" is a constant. Only labels can be defined as entry points",
+                arguments[0]
+            ))),
+            None => Err(Cow::from(format!(
+                "No label with the name \"{}\" exists",
+                arguments[0]
+            ))),
         }
     }
 }

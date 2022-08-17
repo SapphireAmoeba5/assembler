@@ -14,8 +14,11 @@ pub enum Instruction {
     Cmp = 0x11,
     Not = 0x34,
     Neg = 0x44,
+
     Push = 0x21,
     Pop = 0x31,
+    Pushf = 0x71,
+    Popf = 0x81,
 
     Hlt = 0x00,
     Nop = 0x90,
@@ -39,6 +42,13 @@ pub enum Instruction {
     Jge = 0xc5,
     Jle = 0xd5,
     Jg = 0xe5,
+
+    Call = 0x06,
+    Ret = 0x16,
+
+    Lidt = 0x08,
+    Reti = 0x28,
+    Int = 0x18,
 }
 
 impl FromStr for Instruction {
@@ -59,6 +69,8 @@ impl FromStr for Instruction {
             "neg" => Ok(Self::Neg),
             "push" => Ok(Self::Push),
             "pop" => Ok(Self::Pop),
+            "pushf" => Ok(Self::Pushf),
+            "popf" => Ok(Self::Popf),
 
             "hlt" => Ok(Self::Hlt),
             "nop" => Ok(Self::Nop),
@@ -82,6 +94,13 @@ impl FromStr for Instruction {
             "jge" => Ok(Self::Jge),
             "jle" => Ok(Self::Jle),
             "jg" => Ok(Self::Jg),
+
+            "call" => Ok(Self::Call),
+            "ret" => Ok(Self::Ret),
+
+            "lidt" => Ok(Self::Lidt),
+            "reti" => Ok(Self::Reti),
+            "int" => Ok(Self::Int),
             _ => Err(()),
         }
     }
