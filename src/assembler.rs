@@ -1,3 +1,4 @@
+mod expressions;
 mod first_pass;
 mod instruction;
 mod register;
@@ -91,7 +92,11 @@ impl Assembler {
                 buffer.len(),
                 self.output_file
             );
-            std::fs::write(&self.output_file, buffer).expect("Failed to write to file");
+
+            if let Err(e) = std::fs::write(&self.output_file, buffer) {
+                errors.push((Cow::from(format!("{:?}", e)), None));
+            }
+
         }
 
         errors

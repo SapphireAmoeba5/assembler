@@ -1,3 +1,5 @@
+mod equation_parse;
+
 use super::instruction::Instruction;
 use super::register::Register;
 use super::size::Size;
@@ -56,7 +58,6 @@ impl FirstPass {
             Ok(s) => s,
             Err(e) => return vec![(Cow::from("Unable to open input source file"), None)],
         };
-
         self.first_pass(&assembly_source)
     }
 }
@@ -122,7 +123,10 @@ impl FirstPass {
 
         errors
     }
+}
 
+/// Methods for determining the width of tokens
+impl FirstPass {
     fn get_width_of_token(&self, token: &Token) -> AssemblerResult<u64> {
         match token {
             Token::ConstantInteger { value: _, size } => Ok(*size as u64),
@@ -262,7 +266,9 @@ impl FirstPass {
             || ch == '('
             || ch == ')'
             || ch == '+'
+            || ch == '-'
             || ch == '*'
+            || ch == '/'
             || ch == '-'
             || ch == '/'
             || ch == '='
@@ -350,17 +356,6 @@ impl FirstPass {
         }
 
         if line.len() == 1 {
-            match try_parse_number(line[0]) {
-                Ok(Some((value, size))) => return Ok(Token::ConstantInteger { value, size }),
-                Err(e) => return Err(e),
-                Ok(None) => {}
-            }
-
-            let result = try_parse_number(line[0])?;
-            if let Some((value, size)) = result {
-                return Ok(Token::ConstantInteger { value, size });
-            }
-
             let result = try_parse_string(line[0])?;
             if let Some(value) = result {
                 return Ok(Token::ConstantString {
@@ -372,28 +367,22 @@ impl FirstPass {
                 Ok(register) => return Ok(Token::Register { register }),
                 Err(_) => {}
             }
-
-            match try_parse_identifier(line[0]) {
-                Ok(identifier) => {
-                    return Ok(Token::Identifier {
-                        identifier: identifier.into(),
-                    })
-                }
-                Err(_) => {}
-            }
         }
 
+        let (value, size) = self.try_eval(line)?;
+        Ok(Token::ConstantInteger { value, size })
+
         // Flatten the line into a single string to output as an error
-        let flat_line = line
-            .iter()
-            .fold(String::with_capacity(line.len() * 5), |acc, s| {
-                if acc.is_empty() {
-                    format!("{}", s)
-                } else {
-                    format!("{} {}", acc, s)
-                }
-            });
-        Err(Cow::from(format!("Error at \"{}\"", flat_line)))
+        //let flat_line = line
+        //    .iter()
+        //    .fold(String::with_capacity(line.len() * 5), |acc, s| {
+        //        if acc.is_empty() {
+        //            format!("{}", s)
+        //        } else {
+        //            format!("{} {}", acc, s)
+        //        }
+        //    });
+        //Err(Cow::from(format!("Error at \"{}\"", flat_line)))
     }
 
     /// Garunteed to return Token::MemoryReserve if function succeeds and returns Some
@@ -456,22 +445,12 @@ impl FirstPass {
 
     /// Garunteed to return Token::Index if functions succeeds and returns Some
     fn index_from_lexed(&mut self, mut lexed: &[&str]) -> AssemblerResult<Option<Token>> {
-        let size: Size;
-        if lexed[0] == "u8" || lexed[0] == "i8" {
-            size = Size::One;
+        let size = if let Ok(size) = Size::from_str(lexed[0]) {
             lexed = &lexed[1..];
-        } else if lexed[0] == "u16" || lexed[0] == "i16" {
-            size = Size::Two;
-            lexed = &lexed[1..];
-        } else if lexed[0] == "u32" || lexed[0] == "i32" {
-            size = Size::Four;
-            lexed = &lexed[1..];
-        } else if lexed[0] == "u64" || lexed[0] == "i64" {
-            size = Size::Eight;
-            lexed = &lexed[1..];
+            size
         } else {
-            size = Size::Eight;
-        }
+            Size::Eight
+        };
 
         if lexed[0] != "[" {
             return Ok(None);
@@ -652,31 +631,23 @@ impl FirstPass {
         lexed: &[&str],
         line_number: usize,
     ) -> AssemblerResult<Option<()>> {
-        let size: Size;
-
         if lexed[0] != "const" {
             return Ok(None);
         }
 
-        if lexed.len() != 5 {
+        if lexed.len() < 5 {
             return Err(Cow::from("Invalid constant declaration"));
         }
 
-        let constant_type = lexed[1];
-        if constant_type == "u8" || constant_type == "i8" {
-            size = Size::One;
-        } else if constant_type == "u16" || constant_type == "i16" {
-            size = Size::Two;
-        } else if constant_type == "u32" || constant_type == "i32" {
-            size = Size::Four;
-        } else if constant_type == "u64" || constant_type == "i64" {
-            size = Size::Eight;
-        } else {
-            return Err(Cow::from(format!(
-                "Expected type but found \"{}\" on constant declaration",
-                constant_type
-            )));
-        }
+        let size = match Size::from_str(lexed[1]) {
+            Ok(size) => size,
+            Err(_) => {
+                return Err(Cow::from(format!(
+                    "Expected type but found \"{}\" on constant declaration",
+                    lexed[1]
+                )))
+            }
+        };
 
         let identifier = lexed[2];
 
@@ -687,14 +658,8 @@ impl FirstPass {
             )));
         }
 
-        let value = match try_parse_number(lexed[4]) {
-            Ok(Some((value, _))) => value,
-            Ok(None) => {
-                return Err(Cow::from(format!(
-                    "Expected integer but found \"{}\"",
-                    lexed[4]
-                )))
-            }
+        let value = match self.try_eval(&lexed[4..]) {
+            Ok((value, _)) => value,
             Err(e) => return Err(e),
         };
 

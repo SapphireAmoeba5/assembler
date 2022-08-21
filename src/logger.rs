@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! debug_println {
     ($($args:expr), *) => (if cfg!(debug_assertions) {
-        println!("[DEBUG {}] {}", line!(), format!($($args), *));
+        println!("[DEBUG {}:{}] {}", file!(), line!(), format!($($args), *));
     })
 }
 
