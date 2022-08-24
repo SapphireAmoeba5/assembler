@@ -1,5 +1,6 @@
 mod equation_parse;
 
+use super::expressions::parse;
 use super::instruction::Instruction;
 use super::register::Register;
 use super::size::Size;
@@ -451,137 +452,19 @@ impl FirstPass {
         } else {
             Size::Eight
         };
-
         if lexed[0] != "[" {
             return Ok(None);
         }
-        if lexed.iter().rev().next().unwrap() != &"]" {
+        if *lexed.iter().rev().next().unwrap() != "]" {
             return Err(Cow::from("No closing bracket for memory index"));
         }
 
-        let equation = &lexed[1..lexed.len() - 1];
+        lexed = &lexed[1..lexed.len() - 1];
 
-        if equation.is_empty() {
-            return Ok(Some(Token::Index {
-                base: None,
-                index: None,
-                offset: 0,
-                scalar: Size::One,
-                size,
-            }));
-        }
-
-        // The proper format for an index equation is (Optional(register) + Optional(register) + constants) * scalar
-        if equation[0] != "(" {
-            return Err(Cow::from("Invalid equation"));
-        }
-
-        if let Some(closing_bracket) = equation.get(equation.len() - 3) {
-            if *closing_bracket != ")" {
-                return Err(Cow::from("Missing closing bracket in right spot"));
-            }
-        } else {
-            return Err(Cow::from("Invalid equation"));
-        }
-
-        let mut base: Option<Register> = None;
-        let mut index: Option<Register> = None;
-        let mut offset: u64 = 0;
-        let mut scalar = Size::One;
-
-        let mut expecting_symbol = false;
-        for token in equation[1..equation.len() - 3].iter() {
-            if expecting_symbol && *token == "+" {
-                if *token != "+" {
-                    return Err(Cow::from(
-                        "Invalid equation: Expected addition but didn't find it",
-                    ));
-                }
-                expecting_symbol = false;
-                continue;
-            }
-
-            match try_parse_number(*token) {
-                Ok(Some((value, _))) => {
-                    offset += value;
-                    expecting_symbol = true;
-                    continue;
-                }
-                Err(e) => return Err(e),
-                Ok(None) => {}
-            }
-
-            match Register::from_str(token) {
-                Ok(register) => {
-                    if base.is_none() {
-                        base = Some(register);
-                    } else if index.is_none() {
-                        index = Some(register);
-                    } else {
-                        return Err(Cow::from("Invalid equation: Too many index registers"));
-                    }
-                    expecting_symbol = true;
-                    continue;
-                }
-                Err(_) => {}
-            }
-
-            match try_parse_identifier(token) {
-                Ok(identifier) => {
-                    let constant = match self.symbol_table.get(identifier) {
-                        Some(Symbol::SymbolConstant(constant)) => constant,
-                        Some(Symbol::SymbolLabel(label)) => {
-                            return Err(Cow::from(format!(
-                                "Invalid equation: Expected constant, but found label \"{}\"",
-                                label.name
-                            )))
-                        }
-                        None => {
-                            return Err(Cow::from(format!("\"{}\" is not declared", identifier)))
-                        }
-                    };
-
-                    offset += constant.value;
-                    expecting_symbol = true;
-                    continue;
-                }
-                Err(_) => {}
-            }
-
-            // If after it tries to parse every valid token type the flow of execution reaches here, then there is a sytnax error
-            return Err(Cow::from(format!("Expected register, constant, or identifier but found an unkown token when parsing equation \"{}\"", token)));
-        }
-
-        if equation[equation.len() - 2] != "*" {
-            return Err(Cow::from(format!(
-                "Expected '*' but found \"{}\"",
-                equation[equation.len() - 2]
-            )));
-        }
-
-        let scalar = match try_parse_number(equation[equation.len() - 1]) {
-            Ok(Some((value, _))) => match Size::try_from(value) {
-                Ok(scalar) => scalar,
-                Err(_) => {
-                    return Err(Cow::from(format!(
-                        "Scalar must be 1, 2, 4, or 8 but instead got \"{}\"",
-                        value
-                    )))
-                }
-            },
-            _ => {
-                return Err(Cow::from(format!(
-                    "Scalar value must be a valid integer but instead got \"{}\"",
-                    equation[equation.len() - 1]
-                )))
-            }
-        };
+        let expression = parse(lexed)?;
 
         Ok(Some(Token::Index {
-            base,
-            index,
-            offset,
-            scalar,
+            expression,
             size,
         }))
     }

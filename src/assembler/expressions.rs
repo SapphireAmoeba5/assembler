@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 
 use std::borrow::Cow;
 
+#[derive(Debug, Clone)]
 pub enum RPNToken {
     Constant(u64, Size),
     Identifier(String),

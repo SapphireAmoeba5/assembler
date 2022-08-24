@@ -13,12 +13,16 @@ use register::Register;
 use size::Size;
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::str::FromStr;
 use std::time::Instant;
 use token::Token;
 
 use symbol_table::{Constant, Label, Symbol, SymbolTable};
 
-use self::first_pass::{FirstPass, TokenEntry};
+use self::{
+    expressions::RPNToken,
+    first_pass::{FirstPass, TokenEntry},
+};
 
 pub struct Assembler {
     input_file: String,
@@ -27,6 +31,7 @@ pub struct Assembler {
     assembled_data: RefCell<Vec<u8>>,
     first_pass: FirstPass,
     entry_point: RefCell<Option<String>>,
+    current_line: usize,
 }
 
 type AssemblerResult<T> = Result<T, Cow<'static, str>>;
@@ -43,6 +48,7 @@ impl Assembler {
             assembled_data: RefCell::new(Vec::with_capacity(100 * 1024)), /* 100 kilobytes of data. */
             first_pass: FirstPass::new(input_file),
             entry_point: RefCell::new(None),
+            current_line: 0,
         };
 
         errors.extend(this.first_pass.begin());
@@ -56,6 +62,15 @@ impl Assembler {
 
         errors
     }
+
+    fn get_identifier(&self, identifier: &str) -> Option<&Symbol> {
+        let value = self.first_pass.symbol_table.get(identifier);
+        match value {
+            Some(Symbol::SymbolConstant(constant)) if constant.line <= self.current_line => value,
+            Some(Symbol::SymbolLabel(label)) => value,
+            _ => None,
+        }
+    }
 }
 
 impl Assembler {
@@ -63,6 +78,7 @@ impl Assembler {
         let mut errors: AssemblerReturn = Vec::with_capacity(10);
 
         for token in self.first_pass.tokens.iter() {
+            self.current_line = token.line_number;
             if let Err(e) = self.assemble_token(token) {
                 errors.push((e, Some((self.input_file.clone(), token.line_number))));
             }
@@ -96,7 +112,6 @@ impl Assembler {
             if let Err(e) = std::fs::write(&self.output_file, buffer) {
                 errors.push((Cow::from(format!("{:?}", e)), None));
             }
-
         }
 
         errors
@@ -384,43 +399,12 @@ impl Assembler {
             _ => return Err(Cow::from("Left operand must be a register")),
         };
 
-        let (base, index, const_offset, scalar, size) = match &operands[1] {
+        let (expression, size) = match &operands[1] {
             Token::Index {
-                base,
-                index,
-                offset,
-                scalar,
+                expression,
                 size,
-            } => (*base, *index, *offset, *scalar, *size),
-
-            Token::Identifier { identifier } => {
-                let label_offset = match self.first_pass.symbol_table.get(&identifier) {
-                    Some(Symbol::SymbolLabel(label)) => label.address,
-                    Some(Symbol::SymbolConstant(_)) => {
-                        return Err(Cow::from(format!(
-                        "Identifier \"{}\" is a constant. Only labels are allowed in this position",
-                        identifier
-                    )))
-                    }
-                    None => {
-                        return Err(Cow::from(format!(
-                            "Identifier \"{}\" does not exist",
-                            identifier
-                        )))
-                    }
-                };
-
-                let relative_offset =
-                    label_offset.wrapping_sub(instruction_offset + instruction_width);
-                (
-                    Some(Register::IP(Size::Eight)),
-                    None,
-                    relative_offset,
-                    Size::One,
-                    left_register.get_size(),
-                )
-            }
-            _ => return Err(Cow::from("Right operand must be an index")),
+            } => (expression, *size),
+            _ => return Err(Cow::from("Memory index expected for second operand")),
         };
 
         if left_register.get_size() != size {
@@ -438,7 +422,12 @@ impl Assembler {
         let metadata = size_id << 6 | left_register.get_register_id();
         self.assembled_data.borrow_mut().push(metadata);
 
-        self.assemble_index(base, index, const_offset, scalar, size);
+        self.assemble_index(
+            expression,
+            size,
+            instruction_offset,
+            instruction_width,
+        )?;
 
         Ok(())
     }
@@ -459,45 +448,20 @@ impl Assembler {
 
         self.assembled_data.borrow_mut().push(instruction as u8);
 
-        let (base, index, const_offset, scalar, size) = match &operands[0] {
+        let (expression, size) = match &operands[0] {
             Token::Index {
-                base,
-                index,
-                offset,
-                scalar,
+                expression,
                 size,
-            } => (*base, *index, *offset, *scalar, *size),
-            Token::Identifier { identifier } => {
-                let label_offset = match self.first_pass.symbol_table.get(&identifier) {
-                    Some(Symbol::SymbolLabel(label)) => label.address,
-                    Some(Symbol::SymbolConstant(_)) => {
-                        return Err(Cow::from(format!(
-                        "Identifier \"{}\" is a constant. Only labels are allowed in this position",
-                        identifier
-                    )))
-                    }
-                    None => {
-                        return Err(Cow::from(format!(
-                            "Identifier \"{}\" does not exist",
-                            identifier
-                        )))
-                    }
-                };
-
-                let relative_offset =
-                    label_offset.wrapping_sub(instruction_offset + instruction_width);
-                (
-                    Some(Register::IP(Size::Eight)),
-                    None,
-                    relative_offset,
-                    Size::One,
-                    Size::Eight,
-                )
-            }
-            _ => return Err(Cow::from("Operand must be a memory index, or a label")),
+            } => (expression, *size),
+            _ => return Err(Cow::from("Memory index expected for second operand")),
         };
 
-        self.assemble_index(base, index, const_offset, scalar, size);
+        self.assemble_index(
+            expression,
+            size,
+            instruction_offset,
+            instruction_width,
+        )?;
 
         Ok(())
     }
@@ -549,27 +513,179 @@ impl Assembler {
 
     fn assemble_index(
         &self,
-        base: Option<Register>,
-        index: Option<Register>,
-        const_offset: u64,
-        scalar: Size,
+        expression: &Vec<RPNToken>,
         _size: Size,
-    ) {
-        let scalar: u8 = match scalar {
-            Size::One => 0,
-            Size::Two => 1,
-            Size::Four => 2,
-            Size::Eight => 3,
+        instruction_offset: u64,
+        instruction_width: u64,
+    ) -> AssemblerResult<()> {
+        let mut stack: Vec<(u64, bool)> = Vec::with_capacity(expression.len());
+        let mut base: Option<Register> = None;
+        let mut index: Option<Register> = None;
+        let mut scalar: Option<Size> = None;
+
+        for token in expression {
+            if scalar.is_some() {
+                return Err(Cow::from("Scalar calculated but didn't find the end of the expression"));
+            }
+
+            match token {
+                RPNToken::Constant(value, ..) => stack.push((*value, false)),
+                RPNToken::Identifier(identifier) => {
+                    if let Ok(register) = Register::from_str(identifier) {
+                        // Register values default to being 0 because the register will be added at runtime
+                        stack.push((0, true));
+
+                        if base.is_none() {
+                            base = Some(register);
+                            continue;
+                        } else if index.is_none() {
+                            index = Some(register);
+                            continue;
+                        } else {
+                            return Err(Cow::from("Cannot use more than 2 registers"));
+                        }
+                    }
+
+                    match self.get_identifier(identifier) {
+                        Some(Symbol::SymbolConstant(constant)) => {
+                            stack.push((constant.value, false))
+                        }
+                        Some(Symbol::SymbolLabel(label)) => {
+                            let byte_offset = label
+                                .address
+                                .wrapping_sub(instruction_offset + instruction_width);
+
+                            if let Some(base_reg) = base {
+                                if base_reg != Register::IP(Size::Eight) {
+                                    if let Some(index_reg) = index {
+                                        if index_reg != Register::IP(Size::Eight) {
+                                            return Err(Cow::from("Cannot use label in memory index at the same time as two other registers"));
+                                        }
+                                    } else {
+                                        index = Some(Register::IP(Size::Eight));
+                                    }
+                                }
+                            } else {
+                                base = Some(Register::IP(Size::Eight));
+                            }
+
+                            stack.push((byte_offset, false))
+                        }
+                        None => {
+                            return Err(Cow::from(format!(
+                                "Undeclared identifier \"{}\"",
+                                identifier
+                            )))
+                        }
+                    }
+                }
+                RPNToken::Add => {
+                    let (right, is_right_a_register_value) = stack.pop().unwrap();
+                    let (left, is_left_register_value) = stack.pop().unwrap();
+
+                    let result = left.wrapping_add(right);
+
+                    let mut register_value = false;
+                    if is_right_a_register_value || is_left_register_value {
+                        register_value = true;
+                    }
+
+                    stack.push((result, register_value));
+                }
+                RPNToken::Sub => {
+                    let (right, is_right_a_register_value) = stack.pop().unwrap();
+                    let (left, is_left_a_register_value) = stack.pop().unwrap();
+
+                    if is_left_a_register_value {
+                        return Err(Cow::from("Cannot subtract a value that relies on the value of a register from a number"));
+                    }
+
+                    let result = left.wrapping_sub(right);
+
+                    stack.push((result, is_right_a_register_value));
+                }
+                RPNToken::Mul => {
+                    let (right, is_right_a_register_value) = stack.pop().unwrap();
+                    let (left, is_left_a_register_value) = stack.pop().unwrap();
+
+                    // If either value is a register value than the current calculation is for the scalar
+                    if is_left_a_register_value || is_right_a_register_value && scalar.is_none() {
+                        let scalar_value = if is_left_a_register_value {
+                            right
+                        } else {
+                            left
+                        };
+
+                        scalar = match Size::try_from(scalar_value) {
+                            Ok(scalar) => Some(scalar),
+                            Err(_) => return Err(Cow::from("Invalid scalar. Scalar must be 1, 2, 4, or 8")),
+                        };
+
+                    } else {
+                        return Err(Cow::from("Scalar already calculated"));
+                    }
+
+                    let result = left.wrapping_mul(right);
+
+                    // Hardcode false because we check to make sure neither value is a register value
+                    stack.push((result, false));
+                }
+                RPNToken::Div => {
+                    let (right, is_right_a_register_value) = stack.pop().unwrap();
+                    let (left, is_left_a_register_value) = stack.pop().unwrap();
+
+                    if is_left_a_register_value || is_right_a_register_value {
+                        return Err(Cow::from(
+                            "Cannot divide values that rely on the value of a register",
+                        ));
+                    }
+
+                    if right == 0 {
+                        return Err(Cow::from("Cannot divide by 0"));
+                    }
+
+                    let result = left.wrapping_div(right);
+
+                    // Hardcode false because we check to makes ure neither value is a register value
+                    stack.push((result, false));
+                }
+                RPNToken::Negate => {
+                    let (value, is_register_value) = stack.pop().unwrap();
+
+                    if is_register_value {
+                        return Err(Cow::from("Cannot use a negate a register value"));
+                    }
+
+                    let result = value.wrapping_neg();
+                    stack.push((result, false));
+                }
+            }
+        }
+
+        let scalar = match scalar {
+            Some(Size::One) => 0,
+            Some(Size::Two) => 1,
+            Some(Size::Four) => 2,
+            Some(Size::Eight) => 3,
+            None => 0,
         };
 
-        let metadata = scalar << 6
-            | index.map(|s| s.get_register_id()).unwrap_or(0) << 3
-            | base.map(|s| s.get_register_id()).unwrap_or(0);
+        if stack.len() == 1 {
+            let (const_offset, _) = stack.pop().unwrap();
 
-        self.assembled_data.borrow_mut().push(metadata);
-        self.assembled_data
-            .borrow_mut()
-            .extend(const_offset.to_le_bytes());
+            let metadata = scalar << 6
+                | index.map(|s| s.get_register_id()).unwrap_or(0) << 3
+                | base.map(|s| s.get_register_id()).unwrap_or(0);
+
+            self.assembled_data.borrow_mut().push(metadata);
+            self.assembled_data
+                .borrow_mut()
+                .extend(const_offset.to_le_bytes());
+
+            Ok(())
+        } else {
+            panic!("Expected stack length to be one but it was {}", stack.len())
+        }
     }
 }
 

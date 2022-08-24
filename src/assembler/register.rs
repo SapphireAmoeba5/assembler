@@ -1,7 +1,7 @@
 use super::Size;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Register {
     // Each register enum contains a single usize which contains the size of the register. that usize should always be either 1, 2, 4, or 8
     X0(Size),

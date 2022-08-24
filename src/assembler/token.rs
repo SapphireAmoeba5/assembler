@@ -1,3 +1,4 @@
+use super::expressions::RPNToken;
 use super::register::Register;
 use super::Instruction;
 use super::Size;
@@ -10,10 +11,7 @@ pub enum Token {
     },
 
     Index {
-        base: Option<Register>,
-        index: Option<Register>,
-        offset: u64,
-        scalar: Size, /* The scalar can only be 1, 2, 4 or 8 */
+        expression: Vec<RPNToken>, // The expression for the memory address must be calculated in the assembler stage because the first pass may not have the required information to calculate it itself
         size: Size,
     },
 
