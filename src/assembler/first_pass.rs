@@ -229,7 +229,9 @@ impl FirstPass {
             | Instruction::Ret
             | Instruction::Pushf
             | Instruction::Popf
-            | Instruction::Reti => Ok(1), /* Garunteed to be encoded in 1 byte */
+            | Instruction::Reti
+            | Instruction::Cli
+            | Instruction::Sti => Ok(1), /* Garunteed to be encoded in 1 byte */
 
             /* Instructions that are garunteed to be encoded in 11 bytes */
             Instruction::Str | Instruction::Ldr | Instruction::Lea => Ok(11),
@@ -463,10 +465,7 @@ impl FirstPass {
 
         let expression = parse(lexed)?;
 
-        Ok(Some(Token::Index {
-            expression,
-            size,
-        }))
+        Ok(Some(Token::Index { expression, size }))
     }
 
     fn parse_label_from_lexed<'a>(

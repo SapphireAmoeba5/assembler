@@ -49,6 +49,8 @@ pub enum Instruction {
     Lidt = 0x08,
     Reti = 0x28,
     Int = 0x18,
+    Cli = 0x38,
+    Sti = 0x48,
 }
 
 impl FromStr for Instruction {
@@ -101,6 +103,8 @@ impl FromStr for Instruction {
             "lidt" => Ok(Self::Lidt),
             "reti" => Ok(Self::Reti),
             "int" => Ok(Self::Int),
+            "cli" => Ok(Self::Cli),
+            "sti" => Ok(Self::Sti),
             _ => Err(()),
         }
     }

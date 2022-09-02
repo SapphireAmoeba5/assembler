@@ -222,7 +222,9 @@ impl Assembler {
             | Instruction::Ret
             | Instruction::Pushf
             | Instruction::Popf
-            | Instruction::Reti => self.assembled_data.borrow_mut().push(instruction as u8),
+            | Instruction::Reti
+            | Instruction::Cli
+            | Instruction::Sti => self.assembled_data.borrow_mut().push(instruction as u8),
 
             Instruction::Str | Instruction::Ldr | Instruction::Lea => self
                 .assemble_memory_instruction(
@@ -400,10 +402,7 @@ impl Assembler {
         };
 
         let (expression, size) = match &operands[1] {
-            Token::Index {
-                expression,
-                size,
-            } => (expression, *size),
+            Token::Index { expression, size } => (expression, *size),
             _ => return Err(Cow::from("Memory index expected for second operand")),
         };
 
@@ -422,12 +421,7 @@ impl Assembler {
         let metadata = size_id << 6 | left_register.get_register_id();
         self.assembled_data.borrow_mut().push(metadata);
 
-        self.assemble_index(
-            expression,
-            size,
-            instruction_offset,
-            instruction_width,
-        )?;
+        self.assemble_index(expression, size, instruction_offset, instruction_width)?;
 
         Ok(())
     }
@@ -449,19 +443,11 @@ impl Assembler {
         self.assembled_data.borrow_mut().push(instruction as u8);
 
         let (expression, size) = match &operands[0] {
-            Token::Index {
-                expression,
-                size,
-            } => (expression, *size),
+            Token::Index { expression, size } => (expression, *size),
             _ => return Err(Cow::from("Memory index expected for second operand")),
         };
 
-        self.assemble_index(
-            expression,
-            size,
-            instruction_offset,
-            instruction_width,
-        )?;
+        self.assemble_index(expression, size, instruction_offset, instruction_width)?;
 
         Ok(())
     }
@@ -525,7 +511,9 @@ impl Assembler {
 
         for token in expression {
             if scalar.is_some() {
-                return Err(Cow::from("Scalar calculated but didn't find the end of the expression"));
+                return Err(Cow::from(
+                    "Scalar calculated but didn't find the end of the expression",
+                ));
             }
 
             match token {
@@ -618,9 +606,12 @@ impl Assembler {
 
                         scalar = match Size::try_from(scalar_value) {
                             Ok(scalar) => Some(scalar),
-                            Err(_) => return Err(Cow::from("Invalid scalar. Scalar must be 1, 2, 4, or 8")),
+                            Err(_) => {
+                                return Err(Cow::from(
+                                    "Invalid scalar. Scalar must be 1, 2, 4, or 8",
+                                ))
+                            }
                         };
-
                     } else {
                         return Err(Cow::from("Scalar already calculated"));
                     }
