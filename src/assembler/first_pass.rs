@@ -254,6 +254,9 @@ impl FirstPass {
             | Instruction::Jg
             | Instruction::Call
             | Instruction::Lidt => Ok(10),
+
+            /* Instructions that are encoded in 4 bytes */
+            Instruction::In | Instruction::Out => Ok(4),
         }
     }
 }

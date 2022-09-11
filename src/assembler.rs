@@ -11,7 +11,7 @@ use crate::debug_println;
 use instruction::Instruction;
 use register::Register;
 use size::Size;
-use std::borrow::Cow;
+use std::{borrow::Cow, convert::TryInto};
 use std::cell::RefCell;
 use std::str::FromStr;
 use std::time::Instant;
@@ -260,6 +260,8 @@ impl Assembler {
             )?,
 
             Instruction::Int => self.assemble_interrupt_instruction(instruction, operands)?,
+
+            Instruction::In | Instruction::Out => self.assemble_port_instruction(instruction, operands)?,
         }
 
         Ok(())
@@ -495,6 +497,31 @@ impl Assembler {
         self.assembled_data.borrow_mut().push(constant);
 
         Ok(())
+    }
+
+    fn assemble_port_instruction(&self, instruction: Instruction, operands: &[Token]) -> AssemblerResult<()> {
+        self.assembled_data.borrow_mut().push(instruction as u8);
+
+        if(operands.len() == 2) {
+            let register = match operands[0] {
+                Token::Register{register} => register,
+                _ => return Err(Cow::from("Instruction expects left operand to be a register")),
+            };
+
+            let port = match operands[1] {
+                Token::ConstantInteger{value, size} => value as u16,
+                _ => return Err(Cow::from("Instruction expects right operand to be a constant integer")),
+            };
+
+            let reg_id = register.get_register_id();
+
+            self.assembled_data.borrow_mut().push(reg_id);
+            self.assembled_data.borrow_mut().extend_from_slice(&port.to_le_bytes());
+
+            Ok(())
+        } else {
+            Err(Cow::from("Instruction requires two operands"))
+        }
     }
 
     fn assemble_index(

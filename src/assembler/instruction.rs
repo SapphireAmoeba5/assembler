@@ -51,6 +51,9 @@ pub enum Instruction {
     Int = 0x18,
     Cli = 0x38,
     Sti = 0x48,
+
+    In = 0x10,
+    Out = 0x20,
 }
 
 impl FromStr for Instruction {
@@ -105,6 +108,10 @@ impl FromStr for Instruction {
             "int" => Ok(Self::Int),
             "cli" => Ok(Self::Cli),
             "sti" => Ok(Self::Sti),
+
+            "in" => Ok(Self::In),
+            "out" => Ok(Self::Out),
+
             _ => Err(()),
         }
     }
