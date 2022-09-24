@@ -11,10 +11,10 @@ use crate::debug_println;
 use instruction::Instruction;
 use register::Register;
 use size::Size;
-use std::{borrow::Cow, convert::TryInto};
 use std::cell::RefCell;
 use std::str::FromStr;
 use std::time::Instant;
+use std::{borrow::Cow, convert::TryInto};
 use token::Token;
 
 use symbol_table::{Constant, Label, Symbol, SymbolTable};
@@ -261,7 +261,9 @@ impl Assembler {
 
             Instruction::Int => self.assemble_interrupt_instruction(instruction, operands)?,
 
-            Instruction::In | Instruction::Out => self.assemble_port_instruction(instruction, operands)?,
+            Instruction::In | Instruction::Out => {
+                self.assemble_port_instruction(instruction, operands)?
+            }
         }
 
         Ok(())
@@ -499,24 +501,38 @@ impl Assembler {
         Ok(())
     }
 
-    fn assemble_port_instruction(&self, instruction: Instruction, operands: &[Token]) -> AssemblerResult<()> {
+    fn assemble_port_instruction(
+        &self,
+        instruction: Instruction,
+        operands: &[Token],
+    ) -> AssemblerResult<()> {
         self.assembled_data.borrow_mut().push(instruction as u8);
 
-        if(operands.len() == 2) {
+        if (operands.len() == 2) {
             let register = match operands[0] {
-                Token::Register{register} => register,
-                _ => return Err(Cow::from("Instruction expects left operand to be a register")),
+                Token::Register { register } => register,
+                _ => {
+                    return Err(Cow::from(
+                        "Instruction expects left operand to be a register",
+                    ))
+                }
             };
 
             let port = match operands[1] {
-                Token::ConstantInteger{value, size} => value as u16,
-                _ => return Err(Cow::from("Instruction expects right operand to be a constant integer")),
+                Token::ConstantInteger { value, size } => value as u16,
+                _ => {
+                    return Err(Cow::from(
+                        "Instruction expects right operand to be a constant integer",
+                    ))
+                }
             };
 
             let reg_id = register.get_register_id();
 
             self.assembled_data.borrow_mut().push(reg_id);
-            self.assembled_data.borrow_mut().extend_from_slice(&port.to_le_bytes());
+            self.assembled_data
+                .borrow_mut()
+                .extend_from_slice(&port.to_le_bytes());
 
             Ok(())
         } else {
@@ -532,168 +548,122 @@ impl Assembler {
         instruction_width: u64,
     ) -> AssemblerResult<()> {
         let mut stack: Vec<(u64, bool)> = Vec::with_capacity(expression.len());
-        let mut base: Option<Register> = None;
-        let mut index: Option<Register> = None;
-        let mut scalar: Option<Size> = None;
+
+        let mut base_register: Option<Register> = None;
+        let mut index_register: Option<Register> = None;
 
         for token in expression {
-            if scalar.is_some() {
-                return Err(Cow::from(
-                    "Scalar calculated but didn't find the end of the expression",
-                ));
-            }
-
             match token {
-                RPNToken::Constant(value, ..) => stack.push((*value, false)),
-                RPNToken::Identifier(identifier) => {
-                    if let Ok(register) = Register::from_str(identifier) {
-                        // Register values default to being 0 because the register will be added at runtime
-                        stack.push((0, true));
+                RPNToken::Constant(value, _) => stack.push((*value, false)),
 
-                        if base.is_none() {
-                            base = Some(register);
+                RPNToken::Identifier(identifier) => {
+                    match Register::from_str(identifier) {
+                        Ok(register) => {
+                            if(base_register.is_none()) {
+                                base_register = Some(register);
+                            } else if(index_register.is_none()) {
+                                index_register = Some(register);
+                            } else {
+                                return Err(Cow::from("Cannot use more than two registers in an expression"));
+                            }
+
+                            stack.push((0, true));
                             continue;
-                        } else if index.is_none() {
-                            index = Some(register);
-                            continue;
-                        } else {
-                            return Err(Cow::from("Cannot use more than 2 registers"));
                         }
+                        Err(_) => {}
                     }
 
                     match self.get_identifier(identifier) {
-                        Some(Symbol::SymbolConstant(constant)) => {
-                            stack.push((constant.value, false))
-                        }
-                        Some(Symbol::SymbolLabel(label)) => {
-                            let byte_offset = label
-                                .address
-                                .wrapping_sub(instruction_offset + instruction_width);
-
-                            if let Some(base_reg) = base {
-                                if base_reg != Register::IP(Size::Eight) {
-                                    if let Some(index_reg) = index {
-                                        if index_reg != Register::IP(Size::Eight) {
-                                            return Err(Cow::from("Cannot use label in memory index at the same time as two other registers"));
-                                        }
-                                    } else {
-                                        index = Some(Register::IP(Size::Eight));
-                                    }
-                                }
-                            } else {
-                                base = Some(Register::IP(Size::Eight));
+                        Some(symbol) => match symbol {
+                            Symbol::SymbolConstant(constant) => stack.push((constant.value, false)),
+                            Symbol::SymbolLabel(label) => {
+                                todo!("Labels not implemented yet in this position")
                             }
-
-                            stack.push((byte_offset, false))
-                        }
+                        },
                         None => {
                             return Err(Cow::from(format!(
-                                "Undeclared identifier \"{}\"",
+                                "Undeclared identifier used \"{}\"",
                                 identifier
                             )))
                         }
                     }
                 }
+
                 RPNToken::Add => {
-                    let (right, is_right_a_register_value) = stack.pop().unwrap();
-                    let (left, is_left_register_value) = stack.pop().unwrap();
+                    let (right_value, right_depends_on_register) = stack.pop().unwrap();
+                    let (left_value, left_depends_on_register) = stack.pop().unwrap();
 
-                    let result = left.wrapping_add(right);
+                    let result = left_value.wrapping_add(right_value);
 
-                    let mut register_value = false;
-                    if is_right_a_register_value || is_left_register_value {
-                        register_value = true;
-                    }
-
-                    stack.push((result, register_value));
+                    stack.push((
+                        result,
+                        right_depends_on_register || left_depends_on_register,
+                    ));
                 }
+
                 RPNToken::Sub => {
-                    let (right, is_right_a_register_value) = stack.pop().unwrap();
-                    let (left, is_left_a_register_value) = stack.pop().unwrap();
+                    let (right_value, right_depends_on_register) = stack.pop().unwrap();
+                    let (left_value, left_depends_on_register) = stack.pop().unwrap();
 
-                    if is_left_a_register_value {
-                        return Err(Cow::from("Cannot subtract a value that relies on the value of a register from a number"));
-                    }
-
-                    let result = left.wrapping_sub(right);
-
-                    stack.push((result, is_right_a_register_value));
-                }
-                RPNToken::Mul => {
-                    let (right, is_right_a_register_value) = stack.pop().unwrap();
-                    let (left, is_left_a_register_value) = stack.pop().unwrap();
-
-                    // If either value is a register value than the current calculation is for the scalar
-                    if is_left_a_register_value || is_right_a_register_value && scalar.is_none() {
-                        let scalar_value = if is_left_a_register_value {
-                            right
-                        } else {
-                            left
-                        };
-
-                        scalar = match Size::try_from(scalar_value) {
-                            Ok(scalar) => Some(scalar),
-                            Err(_) => {
-                                return Err(Cow::from(
-                                    "Invalid scalar. Scalar must be 1, 2, 4, or 8",
-                                ))
-                            }
-                        };
+                    if right_depends_on_register == false {
+                        let result = left_value.wrapping_sub(right_value);
+                        stack.push((result, left_depends_on_register));
                     } else {
-                        return Err(Cow::from("Scalar already calculated"));
-                    }
-
-                    let result = left.wrapping_mul(right);
-
-                    // Hardcode false because we check to make sure neither value is a register value
-                    stack.push((result, false));
-                }
-                RPNToken::Div => {
-                    let (right, is_right_a_register_value) = stack.pop().unwrap();
-                    let (left, is_left_a_register_value) = stack.pop().unwrap();
-
-                    if is_left_a_register_value || is_right_a_register_value {
                         return Err(Cow::from(
-                            "Cannot divide values that rely on the value of a register",
+                            "Cannot subtract a value that depends on the value of a register",
                         ));
                     }
-
-                    if right == 0 {
-                        return Err(Cow::from("Cannot divide by 0"));
-                    }
-
-                    let result = left.wrapping_div(right);
-
-                    // Hardcode false because we check to makes ure neither value is a register value
-                    stack.push((result, false));
                 }
-                RPNToken::Negate => {
-                    let (value, is_register_value) = stack.pop().unwrap();
 
-                    if is_register_value {
-                        return Err(Cow::from("Cannot use a negate a register value"));
+                RPNToken::Mul => {
+                    let (right_value, right_depends_on_register) = stack.pop().unwrap();
+                    let (left_value, left_depends_on_register) = stack.pop().unwrap();
+
+                    if !right_depends_on_register && !left_depends_on_register {
+                        let result = left_value.wrapping_mul(right_value);
+                        stack.push((result, false));
+                    } else {
+                        return Err(Cow::from(
+                            "Cannot multiply values that depend on the value of registers",
+                        ));
                     }
+                }
 
-                    let result = value.wrapping_neg();
-                    stack.push((result, false));
+                RPNToken::Div => {
+                    let (right_value, right_depends_on_register) = stack.pop().unwrap();
+                    let (left_value, left_depends_on_register) = stack.pop().unwrap();
+
+                    if (!right_depends_on_register && !left_depends_on_register) {
+                        if right_value == 0 {
+                            return Err(Cow::from("Cannot divide by zero"));
+                        }
+                        let result = left_value.wrapping_div(right_value);
+                        stack.push((result, false));
+                    } else {
+                        return Err(Cow::from(
+                            "Cannot divide values that depend on the value of registers",
+                        ));
+                    }
+                }
+
+                RPNToken::Negate => {
+                    let (value, does_value_depend_on_register) = stack.pop().unwrap();
+
+                    if (!does_value_depend_on_register) {
+                        let result = value.wrapping_neg();
+                        stack.push((result, false));
+                    } else {
+                        return Err(Cow::from("Cannot use negative values when they depend on the value of a register"));
+                    }
                 }
             }
         }
 
-        let scalar = match scalar {
-            Some(Size::One) => 0,
-            Some(Size::Two) => 1,
-            Some(Size::Four) => 2,
-            Some(Size::Eight) => 3,
-            None => 0,
-        };
-
-        if stack.len() == 1 {
+        if (stack.len() == 1) {
             let (const_offset, _) = stack.pop().unwrap();
 
-            let metadata = scalar << 6
-                | index.map(|s| s.get_register_id()).unwrap_or(0) << 3
-                | base.map(|s| s.get_register_id()).unwrap_or(0);
+            let metadata = index_register.map(|s| s.get_register_id()).unwrap_or(0) << 3
+                | base_register.map(|s| s.get_register_id()).unwrap_or(0);
 
             self.assembled_data.borrow_mut().push(metadata);
             self.assembled_data
@@ -702,7 +672,7 @@ impl Assembler {
 
             Ok(())
         } else {
-            panic!("Expected stack length to be one but it was {}", stack.len())
+            Err(Cow::from("Invalid expression!"))
         }
     }
 }

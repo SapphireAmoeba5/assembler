@@ -129,7 +129,7 @@ fn tokenize_expression(expression: &[&str]) -> AssemblerResult<Vec<ExpressionTok
         let token = word_to_expression_token(word)?;
 
         if was_previous_operator && token.is_sub() {
-            // Replace a subtraction operator with a negate one.
+            // Replace a subtraction operator with a negate one. This is to allow equations like "5 + -3" to work properly
             output.push(ExpressionToken::Negate);
         } else {
             output.push(token);
