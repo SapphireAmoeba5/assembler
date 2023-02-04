@@ -11,10 +11,9 @@ use crate::debug_println;
 use instruction::Instruction;
 use register::Register;
 use size::Size;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::str::FromStr;
-use std::time::Instant;
-use std::{borrow::Cow, convert::TryInto};
 use token::Token;
 
 use symbol_table::{Constant, Label, Symbol, SymbolTable};
@@ -559,12 +558,14 @@ impl Assembler {
                 RPNToken::Identifier(identifier) => {
                     match Register::from_str(identifier) {
                         Ok(register) => {
-                            if(base_register.is_none()) {
+                            if (base_register.is_none()) {
                                 base_register = Some(register);
-                            } else if(index_register.is_none()) {
+                            } else if (index_register.is_none()) {
                                 index_register = Some(register);
                             } else {
-                                return Err(Cow::from("Cannot use more than two registers in an expression"));
+                                return Err(Cow::from(
+                                    "Cannot use more than two registers in an expression",
+                                ));
                             }
 
                             stack.push((0, true));
@@ -577,7 +578,25 @@ impl Assembler {
                         Some(symbol) => match symbol {
                             Symbol::SymbolConstant(constant) => stack.push((constant.value, false)),
                             Symbol::SymbolLabel(label) => {
-                                todo!("Labels not implemented yet in this position")
+                                let byte_offset = label
+                                    .address
+                                    .wrapping_sub(instruction_offset + instruction_width);
+
+                                if let Some(base_reg) = base_register {
+                                    if base_reg != Register::IP(Size::Eight) {
+                                        if let Some(index_reg) = index_register {
+                                            if index_reg != Register::IP(Size::Eight) {
+                                                return Err(Cow::from("Cannot use label in memory index at the same time as two other registers"));
+                                            }
+                                        } else {
+                                            index_register = Some(Register::IP(Size::Eight));
+                                        }
+                                    }
+                                } else {
+                                    base_register = Some(Register::IP(Size::Eight));
+                                }
+
+                                stack.push((byte_offset, false))
                             }
                         },
                         None => {
