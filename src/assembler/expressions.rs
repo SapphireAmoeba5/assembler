@@ -18,6 +18,8 @@ pub enum RPNToken {
     Negate,
 }
 
+// These are just the tokens used by the parser when parsing the equation.
+// This enum contains entries that are not relevant for later stages of equation parsing such as OpeningBracket, and ClosingBracket
 #[derive(Debug, Clone)]
 enum ExpressionToken {
     Constant(u64, Size),
@@ -119,8 +121,6 @@ impl ExpressionToken {
 
 /// Tokenize an expression.
 fn tokenize_expression(expression: &[&str]) -> AssemblerResult<Vec<ExpressionToken>> {
-    debug_println!("Tokenizing expression: \"{:?}\"", expression);
-
     let mut output: Vec<ExpressionToken> = Vec::with_capacity(expression.len());
 
     let mut was_previous_operator = true;

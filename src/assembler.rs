@@ -5,6 +5,7 @@ mod register;
 mod size;
 mod symbol_table;
 mod token;
+pub mod tokenizer;
 mod try_parse;
 
 use crate::debug_println;

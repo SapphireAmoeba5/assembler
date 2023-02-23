@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 clap = { version = "3.2.12", features = ["derive"] }
 libc = "0.2.126"
+pathdiff = "0.2.1"
+path-absolutize = "3.0.14"
